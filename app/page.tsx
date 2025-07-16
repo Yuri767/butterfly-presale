@@ -12,7 +12,8 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import dynamic from 'next/dynamic';
 
 const WalletMultiButtonDynamic = dynamic(
-  async () => (await import('@solana/wallet-adapter-react-ui')).WalletMultiButton,
+  async () =>
+    (await import('@solana/wallet-adapter-react-ui')).WalletMultiButton,
   { ssr: false }
 );
 
@@ -30,9 +31,9 @@ export default function Presale() {
   const [raised, setRaised] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? parseFloat(saved) : 0;
+      return saved ? parseFloat(saved) : 30;
     }
-    return 0;
+    return 30;
   });
 
   const gradient = 'linear-gradient(90deg,#d946ef,#ec4899,#fbbf24)';
@@ -82,7 +83,7 @@ export default function Presale() {
       setSuccessPopup(true);
     } catch (e) {
       console.error(e);
-      setError('Transaction failed.');
+      setError('Insufficient SOL balance.');
     }
   };
 
@@ -149,7 +150,7 @@ export default function Presale() {
               marginBottom: '1rem',
             }}
           >
-            Buy FLY
+            Buy FLY
           </button>
 
           <div style={{ width: '80%', maxWidth: 420, marginTop: 24 }}>
