@@ -1,64 +1,90 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
+import { useEffect, useState } from 'react';
+import {
+  Connection,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  LAMPORTS_PER_SOL,
+} from '@solana/web3.js';
+import { useWallet } from '@solana/wallet-adapter-react';
+import dynamic from 'next/dynamic';
 
-require('@solana/wallet-adapter-react-ui/styles.css');
+const WalletMultiButtonDynamic = dynamic(
+  async () => (await import('@solana/wallet-adapter-react-ui')).WalletMultiButton,
+  { ssr: false }
+);
 
-const recipientAddress = 'FM7huQouPgKmAVkEatSWA9x7aW8ArmbjSNosR62ctdyr';
-const SOL_PRICE = 0.005;
-const MAX_SOL = 50;
-const MIN_SOL = 0.1;
+const RECIPIENT = new PublicKey('FM7huQouPgKmAVkEatSWA9x7aW8ArmbjSNosR62ctdyr');
+const MAX_RAISE_SOL = 10_000;
+const STORAGE_KEY = 'fly_totalRaised';
 
-export default function Home() {
-  const { connection } = useConnection();
-  const { publicKey, sendTransaction } = useWallet();
+export default function Presale() {
+  const { publicKey, sendTransaction, connected } = useWallet();
+  const connection = new Connection('https://api.mainnet-beta.solana.com');
 
-  const [solAmount, setSolAmount] = useState('');
+  const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
-  const [txComplete, setTxComplete] = useState(false);
-  const [raised, setRaised] = useState(0);
+  const [successPopup, setSuccessPopup] = useState(false);
+  const [raised, setRaised] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? parseFloat(saved) : 0;
+    }
+    return 0;
+  });
 
-  useEffect(() => {
-    const stored = localStorage.getItem('totalRaised');
-    if (stored) setRaised(parseFloat(stored));
-  }, []);
+  const gradient = 'linear-gradient(90deg,#d946ef,#ec4899,#fbbf24)';
 
-  const handleBuy = async () => {
-    const amount = parseFloat(solAmount);
-    if (!publicKey || isNaN(amount) || amount < MIN_SOL || amount > MAX_SOL) {
-      setError(`min ${MIN_SOL} SOL`);
+  const updateRaised = (delta: number) => {
+    setRaised(prev => {
+      const newTotal = prev + delta;
+      localStorage.setItem(STORAGE_KEY, newTotal.toString());
+      return newTotal;
+    });
+  };
+
+  const buyFLY = async () => {
+    setError('');
+    setSuccessPopup(false);
+
+    const sol = parseFloat(amount);
+    if (!publicKey) {
+      setError('Connect wallet first.');
+      return;
+    }
+    if (isNaN(sol) || sol < 0.1 || sol > 50) {
+      setError('Min 0.1 / Max 50 SOL.');
       return;
     }
 
     try {
+      const balance = await connection.getBalance(publicKey);
+      if (balance < sol * LAMPORTS_PER_SOL) {
+        setError('Insufficient SOL balance.');
+        return;
+      }
+
       const tx = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
-          toPubkey: new PublicKey(recipientAddress),
-          lamports: amount * 1e9,
+          toPubkey: RECIPIENT,
+          lamports: sol * LAMPORTS_PER_SOL,
         })
       );
 
-      const signature = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(signature, 'confirmed');
+      const sig = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(sig, 'confirmed');
 
-      const newRaised = raised + amount;
-      setRaised(newRaised);
-      localStorage.setItem('totalRaised', newRaised.toString());
-
-      setTxComplete(true);
-      setSolAmount('');
-      setError('');
-    } catch (err) {
-      console.error(err);
+      updateRaised(sol);
+      setAmount('');
+      setSuccessPopup(true);
+    } catch (e) {
+      console.error(e);
+      setError('Transaction failed.');
     }
   };
-
-  const gradient =
-    'linear-gradient(135deg, #a34fd6, #f770aa, #ffcba4)';
 
   return (
     <div
@@ -67,85 +93,84 @@ export default function Home() {
         background: gradient,
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'center',
         alignItems: 'center',
-        padding: 20,
+        justifyContent: 'center',
+        padding: '2rem',
         textAlign: 'center',
+        color: '#fff',
       }}
     >
-      <h1 style={{ fontSize: '3rem', fontWeight: 'bold', color: 'white' }}>
+      <h1 style={{ fontSize: '3rem', fontWeight: 800, marginBottom: '1.5rem' }}>
         Butterfly $FLY Presale Portal
       </h1>
 
-      <div style={{ marginTop: 20 }}>
-        <WalletMultiButton
-          style={{
-            background: gradient,
-            color: 'white',
-            fontWeight: 'bold',
-            borderRadius: 8,
-          }}
-        />
-      </div>
+      <WalletMultiButtonDynamic
+        style={{
+          background: gradient,
+          color: '#fff',
+          fontWeight: 'bold',
+          borderRadius: 8,
+          padding: '10px 20px',
+          marginBottom: '1.2rem',
+        }}
+      />
 
-      {publicKey && (
+      {connected && (
         <>
           <input
             type="number"
-            min={MIN_SOL}
-            max={MAX_SOL}
-            step="0.01"
-            value={solAmount}
-            onChange={(e) => setSolAmount(e.target.value)}
-            placeholder="Enter amount in SOL"
+            placeholder="Amount (SOL)"
+            value={amount}
+            min={0.1}
+            max={50}
+            step={0.01}
+            onChange={(e) => setAmount(e.target.value)}
             style={{
-              marginTop: 20,
               padding: 10,
-              borderRadius: 8,
-              border: '1px solid #ccc',
-              width: '200px',
+              borderRadius: 6,
+              border: 'none',
+              width: 220,
               textAlign: 'center',
+              marginBottom: 8,
             }}
           />
-          {error && (
-            <div style={{ color: 'red', marginTop: 8 }}>{error}</div>
-          )}
+          {error && <p style={{ color: '#ffbbbb', marginBottom: 6 }}>{error}</p>}
 
           <button
-            onClick={handleBuy}
+            onClick={buyFLY}
             style={{
-              marginTop: 20,
-              padding: '10px 20px',
               background: gradient,
-              color: 'white',
+              color: '#fff',
               fontWeight: 'bold',
+              padding: '10px 24px',
               border: 'none',
               borderRadius: 8,
               cursor: 'pointer',
+              marginBottom: '1rem',
             }}
           >
             Buy FLY
           </button>
 
-          <div style={{ marginTop: 30, color: 'white' }}>
-            <div>Total Raised: {raised.toFixed(2)} SOL / 10,000 SOL</div>
+          <div style={{ width: '80%', maxWidth: 420, marginTop: 24 }}>
+            <p style={{ marginBottom: 6, fontWeight: 600 }}>
+              Total Raised: {raised.toFixed(2)} SOL / {MAX_RAISE_SOL.toLocaleString()} SOL
+            </p>
             <div
               style={{
-                marginTop: 10,
-                width: '300px',
-                height: '10px',
-                background: '#00000066',
-                borderRadius: 5,
+                width: '100%',
+                height: 14,
+                background: 'rgba(255,255,255,0.25)',
+                borderRadius: 10,
                 overflow: 'hidden',
               }}
             >
               <div
                 style={{
-                  width: `${(raised / 10000) * 100}%`,
+                  width: `${Math.min((raised / MAX_RAISE_SOL) * 100, 100)}%`,
                   height: '100%',
-                  background:
-                    'linear-gradient(to right, #00ff88, #66ffcc)',
-                  transition: 'width 0.5s ease-in-out',
+                  background: gradient,
+                  transition: 'width 0.4s ease',
                 }}
               />
             </div>
@@ -153,24 +178,20 @@ export default function Home() {
         </>
       )}
 
-      {txComplete && (
+      {successPopup && (
         <div
-          onClick={() => setTxComplete(false)}
+          onClick={() => setSuccessPopup(false)}
           style={{
             position: 'fixed',
-            top: 0,
-            left: 0,
-            height: '100vh',
-            width: '100vw',
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            color: 'white',
+            inset: 0,
+            background: 'rgba(0,0,0,0.65)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '2rem',
             fontWeight: 'bold',
-            zIndex: 1000,
             cursor: 'pointer',
+            zIndex: 9999,
           }}
         >
           Transaction Completed
